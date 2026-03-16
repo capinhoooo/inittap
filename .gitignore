@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.production
+.env.local
+
+# Build outputs
+.output/
+.tanstack/
+.vinxi/
+.nitro/
+dist/
+cache/
+out/
+
+# Prisma generated
+prisma/generated/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude / AI
+.claude/
+memory/
+.playwright-mcp/
+
+# Foundry
+contract/cache/
+contract/out/
+
+# Misc
+*.local
+temp/
+.mcp.json
+.cta.json
