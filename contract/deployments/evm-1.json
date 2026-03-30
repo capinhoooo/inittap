@@ -1,0 +1,59 @@
+{
+  "chainId": 2124225178762456,
+  "chainName": "Initia evm-1 testnet",
+  "rpcUrl": "https://jsonrpc-evm-1.anvil.asia-southeast.initia.xyz",
+  "restUrl": "https://rest-evm-1.anvil.asia-southeast.initia.xyz",
+  "explorerUrl": "https://scan.testnet.initia.xyz/evm-1",
+  "deployedAt": "2026-04-17",
+  "deployer": "0x564323aE0D8473103F3763814c5121Ca9e48004B",
+  "contracts": {
+    "TapPredictor": "0x790080F8232a7b82321459e1BaAf8100665d9485",
+    "TapToken": "0xE935dbf15c2418be20Ad0be81A3a2203934d8B3e",
+    "AgentRegistry": "0x3582d890fe61189B012Be63f550d54cf6dE1F9DC",
+    "CopyVault": "0x29238F71b552a5bcC772d830B867B67D37E0af5C",
+    "VipScore": "0x02dd9E4b05Dd4a67A073EE9746192afE1FA30906"
+  },
+  "helpers": {
+    "ConnectOracle": "0x031ECb63480983FD216D17BB6e1d393f3816b72F",
+    "ERC20Factory": "0xf108dc9560D3e547270c1B6A334501b71d2F2321",
+    "ERC20Wrapper": "0x7FD385d69908247436f49de2A1AFf6438d75C3c0",
+    "ICosmos": "0x00000000000000000000000000000000000000f1",
+    "IERC20Registry": "0x00000000000000000000000000000000000000f2",
+    "IJSONUtils": "0x00000000000000000000000000000000000000f3"
+  },
+  "config": {
+    "feeDenom": "evm/2eE7007DF876084d4C74685e90bB7f4cd7c86e22",
+    "intervalSeconds": 180,
+    "bufferSeconds": 30,
+    "minBet": "100000000000000000",
+    "maxBet": "100000000000000000000",
+    "treasuryFeeBps": 300,
+    "registrationFee": "1000000000000000000",
+    "minSubscription": "500000000000000000",
+    "activePairs": ["BTC/USD", "ETH/USD", "SOL/USD"]
+  },
+  "wiring": {
+    "predictor.tapToken": "0xE935dbf15c2418be20Ad0be81A3a2203934d8B3e",
+    "predictor.copyVault": "0x29238F71b552a5bcC772d830B867B67D37E0af5C",
+    "predictor.erc20Wrapper": "0x7FD385d69908247436f49de2A1AFf6438d75C3c0",
+    "registry.predictor": "0x790080F8232a7b82321459e1BaAf8100665d9485",
+    "registry.erc20Factory": "0xf108dc9560D3e547270c1B6A334501b71d2F2321",
+    "vault.predictor": "0x790080F8232a7b82321459e1BaAf8100665d9485",
+    "vault.registry": "0x3582d890fe61189B012Be63f550d54cf6dE1F9DC",
+    "vault.executor": "0x564323aE0D8473103F3763814c5121Ca9e48004B",
+    "tapToken.minter": "0x790080F8232a7b82321459e1BaAf8100665d9485"
+  },
+  "vipWiring": {
+    "predictor.setVipScore": "0x02dd9E4b05Dd4a67A073EE9746192afE1FA30906",
+    "predictor.setVipStage": 1,
+    "predictor.vipHookEnabled": true,
+    "vault.setVipScore": "0x02dd9E4b05Dd4a67A073EE9746192afE1FA30906",
+    "vault.setVipStage": 1,
+    "vault.vipHookEnabled": true,
+    "vipScore.allowList.predictor": true,
+    "vipScore.allowList.vault": true
+  },
+  "pending": {
+    "tapToken.lockCosmos": "Optional hardening: call lockCosmos() after demo stability confirmed"
+  }
+}
