@@ -1,0 +1,13 @@
+node_modules
+# Keep environment variables out of version control
+.env
+.env.production
+
+# Prisma generated client
+prisma/generated
+
+# Build output
+.output/
+
+# Agent memory
+memory/
