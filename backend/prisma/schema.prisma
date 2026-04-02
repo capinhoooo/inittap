@@ -1,0 +1,279 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// EXISTING MODELS
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  walletAddress String    @unique
+  nonce         String? // For signature verification
+  lastSignIn    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  bets   Bet[]
+  claims Claim[]
+}
+
+model ErrorLog {
+  id         String   @id @default(cuid())
+  errorCode  String
+  message    String
+  statusCode Int
+  stack      String?  @db.Text
+  context    String?  @db.Text
+  userId     String?
+  method     String?
+  path       String?
+  userAgent  String?  @db.Text
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([errorCode])
+  @@index([createdAt])
+}
+
+// ============================================
+// PREDICTION MARKET
+// ============================================
+
+model Pair {
+  id        String   @id // pairHash as hex string (keccak256 of pairName)
+  name      String   @unique // e.g. "BTC/USD"
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rounds Round[]
+}
+
+enum RoundStatus {
+  LIVE // startTimestamp reached, not yet locked
+  LOCKED // lockTimestamp reached, waiting for close
+  ENDED // oracleCalled = true, rewards calculated
+  CANCELLED // expired without oracle call (refundable)
+}
+
+model Round {
+  id               String      @id @default(cuid())
+  pairId           String // pairHash hex
+  epoch            Int
+  startTimestamp   BigInt // unix seconds
+  lockTimestamp    BigInt
+  closeTimestamp   BigInt
+  lockPrice        String? // stored as string (int128 from contract)
+  closePrice       String?
+  lockOracleNonce  BigInt?
+  closeOracleNonce BigInt?
+  totalAmount      String      @default("0") // wei as string
+  bullAmount       String      @default("0")
+  bearAmount       String      @default("0")
+  rewardBaseCalAmount String   @default("0")
+  rewardAmount     String      @default("0")
+  oracleCalled     Boolean     @default(false)
+  status           RoundStatus @default(LIVE) // derived for fast queries
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  pair Pair  @relation(fields: [pairId], references: [id])
+  bets Bet[]
+
+  @@unique([pairId, epoch])
+  @@index([pairId, status])
+  @@index([status])
+  @@index([closeTimestamp])
+}
+
+enum Position {
+  Bull
+  Bear
+}
+
+model Bet {
+  id          String   @id @default(cuid())
+  pairId      String // pairHash hex
+  epoch       Int
+  userAddress String // checksummed address
+  position    Position // Bull or Bear
+  amount      String // wei as string
+  claimed     Boolean  @default(false)
+  isCopyTrade Boolean  @default(false) // true if placed by CopyVault
+  txHash      String // transaction hash of BetBull/BetBear event
+  blockNumber BigInt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  round Round @relation(fields: [pairId, epoch], references: [pairId, epoch])
+  user  User? @relation(fields: [userAddress], references: [walletAddress])
+
+  @@unique([pairId, epoch, userAddress])
+  @@index([userAddress])
+  @@index([pairId, epoch])
+}
+
+model Claim {
+  id          String   @id @default(cuid())
+  userAddress String
+  pairId      String
+  epoch       Int
+  amount      String // reward amount in wei
+  txHash      String
+  blockNumber BigInt
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userAddress], references: [walletAddress])
+
+  @@unique([pairId, epoch, userAddress])
+  @@index([userAddress])
+}
+
+// ============================================
+// AGENT & COPY TRADING
+// ============================================
+
+model Agent {
+  id                 Int      @id // on-chain agentId (starts at 1)
+  creator            String // creator wallet address
+  agentWallet        String   @unique // agent's trading wallet
+  strategyURI        String // IPFS URI
+  performanceFeeBps  Int
+  subscriberCount    Int      @default(0)
+  totalPnL           String   @default("0") // signed, in wei
+  totalTrades        Int      @default(0)
+  wins               Int      @default(0)
+  isActive           Boolean  @default(true)
+  registrationTime   BigInt
+  shareTokenAddress  String? // ERC20 share token address
+  registrationTxHash String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  copyTrades CopyTrade[]
+  deposits   VaultDeposit[]
+
+  @@index([creator])
+  @@index([isActive])
+}
+
+model CopyTrade {
+  id             String   @id @default(cuid())
+  agentId        Int
+  pairId         String // pairHash hex
+  epoch          Int
+  isBull         Boolean
+  totalBetAmount String // wei
+  followerCount  Int
+  claimed        Boolean  @default(false)
+  totalClaimed   String? // set after claimForFollowers
+  totalFees      String? // set after claimForFollowers
+  txHash         String
+  blockNumber    BigInt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@unique([agentId, pairId, epoch])
+  @@index([agentId])
+  @@index([pairId, epoch])
+}
+
+enum VaultAction {
+  Deposit
+  Withdraw
+}
+
+model VaultDeposit {
+  id          String      @id @default(cuid())
+  agentId     Int
+  follower    String // wallet address
+  amount      String // wei
+  action      VaultAction // Deposit or Withdraw
+  txHash      String
+  blockNumber BigInt
+  createdAt   DateTime    @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, follower])
+  @@index([follower])
+}
+
+// ============================================
+// ORACLE PRICE CACHE
+// ============================================
+
+model OraclePrice {
+  id        String   @id // pairName e.g. "BTC/USD"
+  price     String // raw oracle price as string
+  nonce     BigInt
+  height    BigInt
+  timestamp BigInt
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+// ============================================
+// INDEXER STATE
+// ============================================
+
+model IndexerCursor {
+  id              String   @id @default("main") // singleton
+  lastBlockNumber BigInt   @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// LEADERBOARD SNAPSHOT
+// ============================================
+
+model UserStats {
+  id              String   @id // walletAddress
+  walletAddress   String   @unique
+  totalBets       Int      @default(0)
+  totalWins       Int      @default(0)
+  currentStreak   Int      @default(0)
+  maxStreak       Int      @default(0)
+  totalBetVolume  String   @default("0") // cumulative bet amount in wei
+  totalWinnings   String   @default("0") // cumulative claim amount in wei
+  netPnL          String   @default("0") // winnings minus bets
+  tapTokensMinted String   @default("0") // cumulative TAP minted
+  updatedAt       DateTime @updatedAt
+
+  @@index([totalWins(sort: Desc)])
+  @@index([maxStreak(sort: Desc)])
+  @@index([totalBetVolume(sort: Desc)])
+}
+
+// ============================================
+// BRIDGE EVENTS
+// ============================================
+
+model BridgeEvent {
+  id          String   @id @default(cuid())
+  userAddress String
+  callbackId  BigInt?
+  amount      String   // wei as string
+  receiver    String?  // bech32 cosmos address or empty
+  eventType   String   // BridgeToL1, BridgeViaWrapper, CallbackRegistered, CallbackSuccess, CallbackFailed, RefundAccrued, RefundClaimed
+  success     Boolean?
+  txHash      String
+  blockNumber BigInt
+  createdAt   DateTime @default(now())
+
+  @@index([userAddress])
+  @@index([callbackId])
+  @@index([eventType])
+}
