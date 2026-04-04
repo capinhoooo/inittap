@@ -1,0 +1,37 @@
+[
+  {
+    "inputs": [{ "name": "stage", "type": "uint64" }, { "name": "addr", "type": "address" }],
+    "name": "scores",
+    "outputs": [{ "components": [{ "name": "isIndexed", "type": "bool" }, { "name": "amount", "type": "uint64" }], "type": "tuple" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "name": "stage", "type": "uint64" }],
+    "name": "stages",
+    "outputs": [{ "components": [{ "name": "stage", "type": "uint64" }, { "name": "totalScore", "type": "uint64" }, { "name": "isFinalized", "type": "bool" }], "type": "tuple" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "name": "stage", "type": "uint64" }, { "name": "offset", "type": "uint64" }, { "name": "limit", "type": "uint64" }],
+    "name": "getScores",
+    "outputs": [{ "components": [{ "name": "addr", "type": "address" }, { "name": "amount", "type": "uint64" }, { "name": "index", "type": "uint64" }], "type": "tuple[]" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "name": "addr", "type": "address" }],
+    "name": "allowList",
+    "outputs": [{ "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "initStage",
+    "outputs": [{ "name": "", "type": "uint64" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
