@@ -1,0 +1,56 @@
+[
+  {
+    "type": "function",
+    "name": "get_price",
+    "inputs": [
+      {
+        "name": "pair_id",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct IConnectOracle.Price",
+        "components": [
+          { "name": "price", "type": "uint256", "internalType": "uint256" },
+          { "name": "timestamp", "type": "uint256", "internalType": "uint256" },
+          { "name": "height", "type": "uint64", "internalType": "uint64" },
+          { "name": "nonce", "type": "uint64", "internalType": "uint64" },
+          { "name": "decimal", "type": "uint64", "internalType": "uint64" },
+          { "name": "id", "type": "uint64", "internalType": "uint64" }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_prices",
+    "inputs": [
+      {
+        "name": "pair_ids",
+        "type": "string[]",
+        "internalType": "string[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct IConnectOracle.Price[]",
+        "components": [
+          { "name": "price", "type": "uint256", "internalType": "uint256" },
+          { "name": "timestamp", "type": "uint256", "internalType": "uint256" },
+          { "name": "height", "type": "uint64", "internalType": "uint64" },
+          { "name": "nonce", "type": "uint64", "internalType": "uint64" },
+          { "name": "decimal", "type": "uint64", "internalType": "uint64" },
+          { "name": "id", "type": "uint64", "internalType": "uint64" }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
