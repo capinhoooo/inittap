@@ -1,0 +1,12 @@
+{
+  "project_name": "INITTAP",
+  "repo_url": "",
+  "commit_sha": "",
+  "rollup_chain_id": "evm-1",
+  "deployed_address": "0x615a71c4fc146182A6501E45997D361609829F84",
+  "vm": "evm",
+  "native_feature": "auto-signing",
+  "core_logic_path": "contract/src/TapPredictor.sol",
+  "native_feature_frontend_path": "web/src/routes/_app/trade.tsx",
+  "demo_video_url": ""
+}
