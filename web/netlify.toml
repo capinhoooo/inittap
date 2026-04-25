@@ -1,5 +1,5 @@
 [build]
-  command = "bun run build"
+  command = "npm install && NODE_OPTIONS='--max-old-space-size=8192' npx vite build"
   publish = "dist"
 
 [build.environment]
