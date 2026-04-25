@@ -9,7 +9,9 @@ import { nitro } from 'nitro/vite'
 const config = defineConfig({
   plugins: [
     devtools(),
-    nitro(),
+    nitro({
+      preset: 'netlify',
+    }),
     viteTsConfigPaths({
       projects: ['./tsconfig.json'],
     }),
