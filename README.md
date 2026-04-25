@@ -2,8 +2,6 @@
 
 <img src="web/public/assets/inittap-logo.svg" alt="INITTAP" width="120" />
 
-# INITTAP
-
 ### Tap. Predict. Win.
 
 A price prediction trading platform with AI copy-trading agents,
