@@ -800,7 +800,7 @@ const indexEvents = async (): Promise<void> => {
     // Get or create cursor
     const cursor = await prismaQuery.indexerCursor.upsert({
       where: { id: 'main' },
-      create: { id: 'main', lastBlockNumber: BigInt(0) },
+      create: { id: 'main', lastBlockNumber: BigInt(17173000) },
       update: {},
     });
 

@@ -81,7 +81,7 @@ export const EVENT_INDEXER_INTERVAL_MS: number = 3000;
 export const ORACLE_CACHE_INTERVAL_MS: number = 5000;
 export const COPY_TRADE_INTERVAL_MS: number = 5000;
 export const CLAIM_EXECUTOR_INTERVAL_MS: number = 10000;
-export const EVENT_INDEXER_BATCH_SIZE: number = 500;
+export const EVENT_INDEXER_BATCH_SIZE: number = 5000;
 
 // Round Config (mirrors contract)
 export const ROUND_INTERVAL_SECONDS: number = 180;
