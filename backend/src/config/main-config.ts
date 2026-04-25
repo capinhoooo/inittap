@@ -38,7 +38,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // App Configuration
-export const APP_PORT: number = Number(process.env.APP_PORT) || 3700;
+export const APP_PORT: number = Number(process.env.PORT) || Number(process.env.APP_PORT) || 3700;
 export const NODE_ENV: string = process.env.NODE_ENV || 'development';
 export const IS_DEV: boolean = NODE_ENV === 'development';
 export const IS_PROD: boolean = NODE_ENV === 'production';
