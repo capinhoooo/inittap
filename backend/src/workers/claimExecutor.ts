@@ -1,6 +1,6 @@
 import { Interface, type LogDescription } from 'ethers';
 import { CLAIM_EXECUTOR_INTERVAL_MS, COPYVAULT_ADDRESS } from '../config/main-config.ts';
-import { copyVault } from '../lib/evm/contracts.ts';
+import { copyVault, agentRegistryWrite } from '../lib/evm/contracts.ts';
 import { prismaQuery } from '../lib/prisma.ts';
 
 import CopyVaultABI from '../lib/evm/abi/CopyVault.json';
@@ -153,6 +153,37 @@ const executeClaims = async (): Promise<void> => {
               },
             });
           }
+        }
+
+        // Step 4e: Record trade stats on AgentRegistry (wins, PnL, totalTrades)
+        // Sum up totalBetAmount from CopyTrade DB records for this batch
+        const copyTradeRecords = await prismaQuery.copyTrade.findMany({
+          where: { id: { in: tradeIds } },
+          select: { totalBetAmount: true, totalClaimed: true },
+        });
+
+        let totalBetSum = 0n;
+        let totalClaimedSum = 0n;
+        for (const record of copyTradeRecords) {
+          totalBetSum += BigInt(record.totalBetAmount || '0');
+          totalClaimedSum += BigInt(record.totalClaimed || '0');
+        }
+
+        const won = totalClaimedSum > totalBetSum;
+        const pnl = BigInt(totalClaimedSum) - BigInt(totalBetSum);
+
+        try {
+          const recordTx = await agentRegistryWrite.recordTrade(agentId, won, pnl);
+          await recordTx.wait();
+          console.log(
+            `[ClaimExecutor] Recorded trade for agentId=${agentId}: won=${won}, pnl=${pnl.toString()}`,
+          );
+        } catch (recordError) {
+          const recordMsg = recordError instanceof Error ? recordError.message : String(recordError);
+          console.error(
+            `[ClaimExecutor] Failed to record trade for agentId=${agentId}: ${recordMsg}`,
+          );
+          // Don't fail the whole claim, stats will be recorded on next cycle or manually
         }
       } catch (txError) {
         // Log and skip this agent. Will retry next tick.

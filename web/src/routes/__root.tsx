@@ -39,7 +39,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       {
         httpEquiv: 'Content-Security-Policy',
         content:
-          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3700 https://*.initia.xyz; img-src 'self' data: https:; font-src 'self' data:;",
+          "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.initia.xyz; style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com https://assets.initia.xyz; connect-src 'self' http://localhost:* https: wss:; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com https://assets.initia.xyz;",
       },
     ],
     links: [

@@ -4,9 +4,11 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useInterwovenKit } from '@initia/interwovenkit-react'
 import { MsgCall } from '@initia/initia.proto/minievm/evm/v1/tx'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { IconBack, IconExternalLink } from '@initia/icons-react'
 import { encodeFunctionData, parseEther } from 'viem'
 import { fromBaseUnit, truncate } from '@initia/utils'
+import type { DeliverTxResponse } from '@cosmjs/stargate'
 import type { Agent, AgentTrade } from '@/lib/api'
 import { getAgent, getAgentTrades } from '@/lib/api'
 import { cnm } from '@/utils/style'
@@ -95,9 +97,39 @@ function parseTxError(err: unknown): string {
   if (msg.includes('user rejected') || msg.includes('rejected'))
     return 'Transaction rejected'
   if (msg.includes('insufficient funds')) return 'Insufficient INIT balance'
+  if (msg.includes('sequence mismatch'))
+    return 'Sequence mismatch (stale nonce). Please try again.'
   if (msg.includes('execution reverted'))
     return 'Transaction reverted by contract'
   return 'Transaction failed. Please try again.'
+}
+
+const MAX_TX_RETRIES = 3
+
+type RequestTxBlock = ReturnType<typeof useInterwovenKit>['requestTxBlock']
+type TxMessages = Parameters<RequestTxBlock>[0]['messages']
+
+async function sendWithRetry(
+  requestTxBlock: RequestTxBlock,
+  messages: TxMessages,
+): Promise<DeliverTxResponse> {
+  for (let attempt = 0; attempt <= MAX_TX_RETRIES; attempt++) {
+    try {
+      return await requestTxBlock({
+        messages,
+        chainId: 'evm-1',
+        gasAdjustment: 1.5,
+      })
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      if (errMsg.includes('sequence mismatch') && attempt < MAX_TX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 1500))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('Max retries exceeded')
 }
 
 function winRate(agent: Agent): number {
@@ -134,7 +166,6 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [withdrawError, setWithdrawError] = useState<string | null>(null)
 
-  // Reset deposit form when it closes
   useEffect(() => {
     if (depositState.phase === 'idle') {
       setDepositAmount(String(MIN_DEPOSIT))
@@ -142,7 +173,6 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
     }
   }, [depositState.phase])
 
-  // Reset withdraw form when it closes
   useEffect(() => {
     if (withdrawState.phase === 'idle') {
       setWithdrawAmount('')
@@ -188,7 +218,7 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
       value: MsgCall.fromPartial({
         sender: initiaAddress,
         contractAddr: COPY_VAULT_ADDRESS,
-        input: calldata.slice(2),
+        input: calldata,
         value: parseEther(depositAmount).toString(),
         accessList: [],
         authList: [],
@@ -197,11 +227,7 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
 
     setDepositState({ phase: 'submitting' })
     try {
-      const result = await requestTxBlock({
-        messages: [msg],
-        chainId: 'evm-1',
-        gasAdjustment: 1.3,
-      })
+      const result = await sendWithRetry(requestTxBlock, [msg])
       setDepositState({ phase: 'success', txHash: result.transactionHash })
     } catch (err) {
       setDepositState({ phase: 'error', message: parseTxError(err) })
@@ -231,7 +257,7 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
       value: MsgCall.fromPartial({
         sender: initiaAddress,
         contractAddr: COPY_VAULT_ADDRESS,
-        input: calldata.slice(2),
+        input: calldata,
         value: '0',
         accessList: [],
         authList: [],
@@ -240,11 +266,7 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
 
     setWithdrawState({ phase: 'submitting' })
     try {
-      const result = await requestTxBlock({
-        messages: [msg],
-        chainId: 'evm-1',
-        gasAdjustment: 1.3,
-      })
+      const result = await sendWithRetry(requestTxBlock, [msg])
       setWithdrawState({ phase: 'success', txHash: result.transactionHash })
     } catch (err) {
       setWithdrawState({ phase: 'error', message: parseTxError(err) })
@@ -254,262 +276,292 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
   const isDepositSubmitting = depositState.phase === 'submitting'
   const isWithdrawSubmitting = withdrawState.phase === 'submitting'
 
+  const depositModalOpen =
+    depositState.phase === 'input' ||
+    depositState.phase === 'submitting' ||
+    depositState.phase === 'error' ||
+    depositState.phase === 'success'
+
+  const withdrawModalOpen =
+    withdrawState.phase === 'input' ||
+    withdrawState.phase === 'submitting' ||
+    withdrawState.phase === 'error' ||
+    withdrawState.phase === 'success'
+
   return (
-    <div className="flex flex-col items-end gap-2">
-      {/* Deposit button / inline form */}
-      <div className="flex flex-col items-end gap-2">
-        {depositState.phase === 'idle' && (
-          <div className="flex items-center gap-2">
-            {/* Withdraw trigger sits next to Copy Trade */}
-            {withdrawState.phase === 'idle' && (
-              <button
-                onClick={() => setWithdrawState({ phase: 'input' })}
-                className="font-mono text-[12px] uppercase tracking-[0.06em] text-white/30 hover:text-white/60 transition-colors duration-200"
-              >
-                Withdraw
-              </button>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.1 }}
-              onClick={() => setDepositState({ phase: 'input' })}
-              className="bg-white text-[#1f2228] font-mono text-[13px] uppercase tracking-[0.08em] px-5 py-2.5 rounded-lg hover:bg-white/90 transition-colors duration-200"
-            >
-              Copy Trade
-            </motion.button>
-          </div>
-        )}
-
-        {/* Deposit input form */}
-        <AnimatePresence>
-          {(depositState.phase === 'input' ||
-            depositState.phase === 'submitting' ||
-            depositState.phase === 'error') && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-              className="bg-white/5 border border-white/10 rounded-xl p-4 w-72"
-            >
-              <p className="font-sans text-[12px] text-white/50 mb-3 tracking-[-0.01em]">
-                Deposit to copy this agent's trades
-              </p>
-              <div className="mb-3">
-                <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
-                  Amount (INIT)
-                </label>
-                <input
-                  type="number"
-                  value={depositAmount}
-                  onChange={(e) => {
-                    setDepositError(null)
-                    setDepositAmount(e.target.value)
-                  }}
-                  disabled={isDepositSubmitting}
-                  min={MIN_DEPOSIT}
-                  step="0.1"
-                  placeholder={String(MIN_DEPOSIT)}
-                  className={cnm(
-                    'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
-                    depositError
-                      ? 'border-[#EF4444]/50'
-                      : 'border-white/10 focus:border-white/20',
-                  )}
-                />
-                {depositError && (
-                  <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
-                    {depositError}
-                  </p>
-                )}
-                <p className="font-sans text-[11px] text-white/25 mt-1">
-                  Min {MIN_DEPOSIT} INIT
-                </p>
-              </div>
-
-              {depositState.phase === 'error' && (
-                <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
-                  <p className="font-sans text-[12px] text-[#EF4444]">
-                    {depositState.message}
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setDepositState({ phase: 'idle' })}
-                  disabled={isDepositSubmitting}
-                  className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
-                >
-                  Cancel
-                </button>
-                <motion.button
-                  whileTap={isDepositSubmitting ? {} : { scale: 0.97 }}
-                  transition={{ duration: 0.1 }}
-                  onClick={handleDeposit}
-                  disabled={isDepositSubmitting}
-                  className="flex-1 bg-white text-[#1f2228] font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/90 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {isDepositSubmitting
-                    ? 'Confirming...'
-                    : depositState.phase === 'error'
-                      ? 'Retry'
-                      : 'Confirm'}
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Deposit success */}
-        <AnimatePresence>
-          {depositState.phase === 'success' && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-              className="bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-xl p-4 w-72"
-            >
-              <p className="font-sans text-[13px] text-[#22C55E] mb-1">
-                Deposit confirmed
-              </p>
-              <a
-                href={txUrl(depositState.txHash)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
-              >
-                {depositState.txHash.slice(0, 10)}...
-                {depositState.txHash.slice(-6)}
-                <IconExternalLink size={10} />
-              </a>
-              <div className="mt-3">
-                <button
-                  onClick={() => setDepositState({ phase: 'idle' })}
-                  className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
-                >
-                  Done
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setWithdrawState({ phase: 'input' })}
+          className="font-mono text-[12px] uppercase tracking-[0.06em] text-white/30 hover:text-white/60 transition-colors duration-200"
+        >
+          Withdraw
+        </button>
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          transition={{ duration: 0.1 }}
+          onClick={() => setDepositState({ phase: 'input' })}
+          className="bg-white text-[#1f2228] font-mono text-[13px] uppercase tracking-[0.08em] px-5 py-2.5 rounded-lg hover:bg-white/90 transition-colors duration-200"
+        >
+          Copy Trade
+        </motion.button>
       </div>
 
-      {/* Withdraw inline form */}
-      <AnimatePresence>
-        {(withdrawState.phase === 'input' ||
-          withdrawState.phase === 'submitting' ||
-          withdrawState.phase === 'error') && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[12px] text-white/50 mb-3 tracking-[-0.01em]">
-              Withdraw your deposited INIT
-            </p>
-            <div className="mb-3">
-              <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
-                Amount (INIT)
-              </label>
-              <input
-                type="number"
-                value={withdrawAmount}
-                onChange={(e) => {
-                  setWithdrawError(null)
-                  setWithdrawAmount(e.target.value)
-                }}
-                disabled={isWithdrawSubmitting}
-                min="0"
-                step="0.1"
-                placeholder="0.0"
-                className={cnm(
-                  'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
-                  withdrawError
-                    ? 'border-[#EF4444]/50'
-                    : 'border-white/10 focus:border-white/20',
-                )}
-              />
-              {withdrawError && (
-                <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
-                  {withdrawError}
-                </p>
-              )}
-            </div>
-
-            {withdrawState.phase === 'error' && (
-              <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
-                <p className="font-sans text-[12px] text-[#EF4444]">
-                  {withdrawState.message}
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setWithdrawState({ phase: 'idle' })}
-                disabled={isWithdrawSubmitting}
-                className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <motion.button
-                whileTap={isWithdrawSubmitting ? {} : { scale: 0.97 }}
-                transition={{ duration: 0.1 }}
-                onClick={handleWithdraw}
-                disabled={isWithdrawSubmitting}
-                className="flex-1 bg-white/10 text-white border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/15 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isWithdrawSubmitting
-                  ? 'Confirming...'
-                  : withdrawState.phase === 'error'
-                    ? 'Retry'
-                    : 'Confirm'}
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Withdraw success */}
-      <AnimatePresence>
-        {withdrawState.phase === 'success' && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[13px] text-[#22C55E] mb-1">
-              Withdrawal confirmed
-            </p>
-            <a
-              href={txUrl(withdrawState.txHash)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
+      {/* Deposit modal */}
+      {createPortal(
+        <AnimatePresence>
+          {depositModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
+              style={{
+                background: 'rgba(10,12,16,0.85)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              onClick={
+                isDepositSubmitting
+                  ? undefined
+                  : () => setDepositState({ phase: 'idle' })
+              }
             >
-              {withdrawState.txHash.slice(0, 10)}...
-              {withdrawState.txHash.slice(-6)}
-              <IconExternalLink size={10} />
-            </a>
-            <div className="mt-3">
-              <button
-                onClick={() => setWithdrawState({ phase: 'idle' })}
-                className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ duration: 0.22, ease: EASE_OUT_CUBIC }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md"
               >
-                Done
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+                {depositState.phase === 'success' ? (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-[#22C55E] mb-1">
+                      Deposit confirmed
+                    </p>
+                    <a
+                      href={txUrl(depositState.txHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
+                    >
+                      {depositState.txHash.slice(0, 10)}...
+                      {depositState.txHash.slice(-6)}
+                      <IconExternalLink size={10} />
+                    </a>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setDepositState({ phase: 'idle' })}
+                        className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-white/60 mb-4 tracking-[-0.01em]">
+                      Deposit to copy this agent's trades
+                    </p>
+                    <div className="mb-4">
+                      <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
+                        Amount (INIT)
+                      </label>
+                      <input
+                        type="number"
+                        value={depositAmount}
+                        onChange={(e) => {
+                          setDepositError(null)
+                          setDepositAmount(e.target.value)
+                        }}
+                        disabled={isDepositSubmitting}
+                        min={MIN_DEPOSIT}
+                        step="0.1"
+                        placeholder={String(MIN_DEPOSIT)}
+                        className={cnm(
+                          'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
+                          depositError
+                            ? 'border-[#EF4444]/50'
+                            : 'border-white/10 focus:border-white/20',
+                        )}
+                      />
+                      {depositError && (
+                        <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
+                          {depositError}
+                        </p>
+                      )}
+                      <p className="font-sans text-[11px] text-white/25 mt-1">
+                        Min {MIN_DEPOSIT} INIT
+                      </p>
+                    </div>
+
+                    {depositState.phase === 'error' && (
+                      <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
+                        <p className="font-sans text-[12px] text-[#EF4444]">
+                          {depositState.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setDepositState({ phase: 'idle' })}
+                        disabled={isDepositSubmitting}
+                        className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                      <motion.button
+                        whileTap={isDepositSubmitting ? {} : { scale: 0.97 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={handleDeposit}
+                        disabled={isDepositSubmitting}
+                        className="flex-1 bg-white text-[#1f2228] font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/90 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isDepositSubmitting
+                          ? 'Confirming...'
+                          : depositState.phase === 'error'
+                            ? 'Retry'
+                            : 'Confirm'}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+
+      {/* Withdraw modal */}
+      {createPortal(
+        <AnimatePresence>
+          {withdrawModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
+              style={{
+                background: 'rgba(10,12,16,0.85)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              onClick={
+                isWithdrawSubmitting
+                  ? undefined
+                  : () => setWithdrawState({ phase: 'idle' })
+              }
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ duration: 0.22, ease: EASE_OUT_CUBIC }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md"
+              >
+                {withdrawState.phase === 'success' ? (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-[#22C55E] mb-1">
+                      Withdrawal confirmed
+                    </p>
+                    <a
+                      href={txUrl(withdrawState.txHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
+                    >
+                      {withdrawState.txHash.slice(0, 10)}...
+                      {withdrawState.txHash.slice(-6)}
+                      <IconExternalLink size={10} />
+                    </a>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setWithdrawState({ phase: 'idle' })}
+                        className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-white/60 mb-4 tracking-[-0.01em]">
+                      Withdraw your deposited INIT
+                    </p>
+                    <div className="mb-4">
+                      <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
+                        Amount (INIT)
+                      </label>
+                      <input
+                        type="number"
+                        value={withdrawAmount}
+                        onChange={(e) => {
+                          setWithdrawError(null)
+                          setWithdrawAmount(e.target.value)
+                        }}
+                        disabled={isWithdrawSubmitting}
+                        min="0"
+                        step="0.1"
+                        placeholder="0.0"
+                        className={cnm(
+                          'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
+                          withdrawError
+                            ? 'border-[#EF4444]/50'
+                            : 'border-white/10 focus:border-white/20',
+                        )}
+                      />
+                      {withdrawError && (
+                        <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
+                          {withdrawError}
+                        </p>
+                      )}
+                    </div>
+
+                    {withdrawState.phase === 'error' && (
+                      <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
+                        <p className="font-sans text-[12px] text-[#EF4444]">
+                          {withdrawState.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setWithdrawState({ phase: 'idle' })}
+                        disabled={isWithdrawSubmitting}
+                        className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                      <motion.button
+                        whileTap={isWithdrawSubmitting ? {} : { scale: 0.97 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={handleWithdraw}
+                        disabled={isWithdrawSubmitting}
+                        className="flex-1 bg-white/10 text-white border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/15 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isWithdrawSubmitting
+                          ? 'Confirming...'
+                          : withdrawState.phase === 'error'
+                            ? 'Retry'
+                            : 'Confirm'}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </>
   )
 }
 
@@ -584,7 +636,7 @@ function SubscriptionActionsConnected({ agentId }: { agentId: number }) {
       value: MsgCall.fromPartial({
         sender: initiaAddress,
         contractAddr: config.contracts.agentRegistry,
-        input: calldata.slice(2),
+        input: calldata,
         value: parseEther(subAmount).toString(),
         accessList: [],
         authList: [],
@@ -593,11 +645,7 @@ function SubscriptionActionsConnected({ agentId }: { agentId: number }) {
 
     setSubState({ phase: 'submitting' })
     try {
-      const result = await requestTxBlock({
-        messages: [msg],
-        chainId: 'evm-1',
-        gasAdjustment: 1.3,
-      })
+      const result = await sendWithRetry(requestTxBlock, [msg])
       setSubState({ phase: 'success', txHash: result.transactionHash })
     } catch (err) {
       setSubState({ phase: 'error', message: parseTxError(err) })
@@ -618,7 +666,7 @@ function SubscriptionActionsConnected({ agentId }: { agentId: number }) {
       value: MsgCall.fromPartial({
         sender: initiaAddress,
         contractAddr: config.contracts.agentRegistry,
-        input: calldata.slice(2),
+        input: calldata,
         value: '0',
         accessList: [],
         authList: [],
@@ -627,11 +675,7 @@ function SubscriptionActionsConnected({ agentId }: { agentId: number }) {
 
     setUnsubState({ phase: 'submitting' })
     try {
-      const result = await requestTxBlock({
-        messages: [msg],
-        chainId: 'evm-1',
-        gasAdjustment: 1.3,
-      })
+      const result = await sendWithRetry(requestTxBlock, [msg])
       setUnsubState({ phase: 'success', txHash: result.transactionHash })
     } catch (err) {
       setUnsubState({ phase: 'error', message: parseTxError(err) })
@@ -641,226 +685,265 @@ function SubscriptionActionsConnected({ agentId }: { agentId: number }) {
   const isSubSubmitting = subState.phase === 'submitting'
   const isUnsubSubmitting = unsubState.phase === 'submitting'
 
+  const subModalOpen =
+    subState.phase === 'input' ||
+    subState.phase === 'submitting' ||
+    subState.phase === 'error' ||
+    subState.phase === 'success'
+
+  const unsubModalOpen =
+    unsubState.phase === 'confirm' ||
+    unsubState.phase === 'submitting' ||
+    unsubState.phase === 'error' ||
+    unsubState.phase === 'success'
+
   return (
-    <div className="flex flex-col gap-3">
-      {subState.phase === 'idle' && unsubState.phase === 'idle' && (
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            transition={{ duration: 0.1 }}
-            onClick={() => setSubState({ phase: 'input' })}
-            className="bg-white/8 border border-white/15 text-white font-mono text-[12px] uppercase tracking-[0.06em] px-4 py-2 rounded-lg hover:bg-white/12 hover:border-white/25 transition-colors duration-200"
-          >
-            Subscribe
-          </motion.button>
-          <button
-            onClick={() => setUnsubState({ phase: 'confirm' })}
-            className="font-mono text-[12px] uppercase tracking-[0.06em] text-white/30 hover:text-white/60 transition-colors duration-200"
-          >
-            Unsubscribe
-          </button>
-        </div>
+    <>
+      <div className="flex items-center gap-2">
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          transition={{ duration: 0.1 }}
+          onClick={() => setSubState({ phase: 'input' })}
+          className="bg-white/8 border border-white/15 text-white font-mono text-[12px] uppercase tracking-[0.06em] px-4 py-2 rounded-lg hover:bg-white/12 hover:border-white/25 transition-colors duration-200"
+        >
+          Subscribe
+        </motion.button>
+        <button
+          onClick={() => setUnsubState({ phase: 'confirm' })}
+          className="font-mono text-[12px] uppercase tracking-[0.06em] text-white/30 hover:text-white/60 transition-colors duration-200"
+        >
+          Unsubscribe
+        </button>
+      </div>
+
+      {/* Subscribe modal */}
+      {createPortal(
+        <AnimatePresence>
+          {subModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
+              style={{
+                background: 'rgba(10,12,16,0.85)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              onClick={
+                isSubSubmitting
+                  ? undefined
+                  : () => setSubState({ phase: 'idle' })
+              }
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ duration: 0.22, ease: EASE_OUT_CUBIC }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md"
+              >
+                {subState.phase === 'success' ? (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-[#22C55E] mb-1">
+                      Subscribed
+                    </p>
+                    <a
+                      href={txUrl(subState.txHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
+                    >
+                      {subState.txHash.slice(0, 10)}...
+                      {subState.txHash.slice(-6)}
+                      <IconExternalLink size={10} />
+                    </a>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setSubState({ phase: 'idle' })}
+                        className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-white/60 mb-4 tracking-[-0.01em]">
+                      Subscribe to receive trade signals from this agent
+                    </p>
+                    <div className="mb-4">
+                      <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
+                        Amount (INIT)
+                      </label>
+                      <input
+                        type="number"
+                        value={subAmount}
+                        onChange={(e) => {
+                          setSubError(null)
+                          setSubAmount(e.target.value)
+                        }}
+                        disabled={isSubSubmitting}
+                        min={MIN_SUBSCRIBE}
+                        step="0.1"
+                        placeholder={String(MIN_SUBSCRIBE)}
+                        className={cnm(
+                          'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
+                          subError
+                            ? 'border-[#EF4444]/50'
+                            : 'border-white/10 focus:border-white/20',
+                        )}
+                      />
+                      {subError && (
+                        <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
+                          {subError}
+                        </p>
+                      )}
+                      <p className="font-sans text-[11px] text-white/25 mt-1">
+                        Min {MIN_SUBSCRIBE} INIT
+                      </p>
+                    </div>
+
+                    {subState.phase === 'error' && (
+                      <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
+                        <p className="font-sans text-[12px] text-[#EF4444]">
+                          {subState.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSubState({ phase: 'idle' })}
+                        disabled={isSubSubmitting}
+                        className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                      <motion.button
+                        whileTap={isSubSubmitting ? {} : { scale: 0.97 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={handleSubscribe}
+                        disabled={isSubSubmitting}
+                        className="flex-1 bg-white/10 text-white border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/15 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isSubSubmitting
+                          ? 'Confirming...'
+                          : subState.phase === 'error'
+                            ? 'Retry'
+                            : 'Confirm'}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
       )}
 
-      {/* Subscribe input form */}
-      <AnimatePresence>
-        {(subState.phase === 'input' ||
-          subState.phase === 'submitting' ||
-          subState.phase === 'error') && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[12px] text-white/50 mb-3 tracking-[-0.01em]">
-              Subscribe to receive trade signals from this agent
-            </p>
-            <div className="mb-3">
-              <label className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 block mb-1.5">
-                Amount (INIT)
-              </label>
-              <input
-                type="number"
-                value={subAmount}
-                onChange={(e) => {
-                  setSubError(null)
-                  setSubAmount(e.target.value)
-                }}
-                disabled={isSubSubmitting}
-                min={MIN_SUBSCRIBE}
-                step="0.1"
-                placeholder={String(MIN_SUBSCRIBE)}
-                className={cnm(
-                  'w-full bg-white/5 border rounded-lg px-3 py-2 font-mono text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-white/10 transition-colors duration-200 disabled:opacity-50',
-                  subError
-                    ? 'border-[#EF4444]/50'
-                    : 'border-white/10 focus:border-white/20',
+      {/* Unsubscribe modal */}
+      {createPortal(
+        <AnimatePresence>
+          {unsubModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
+              style={{
+                background: 'rgba(10,12,16,0.85)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+              }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              onClick={
+                isUnsubSubmitting
+                  ? undefined
+                  : () => setUnsubState({ phase: 'idle' })
+              }
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.97 }}
+                transition={{ duration: 0.22, ease: EASE_OUT_CUBIC }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md"
+              >
+                {unsubState.phase === 'success' ? (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-[#22C55E] mb-1">
+                      Unsubscribed
+                    </p>
+                    <a
+                      href={txUrl(unsubState.txHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
+                    >
+                      {unsubState.txHash.slice(0, 10)}...
+                      {unsubState.txHash.slice(-6)}
+                      <IconExternalLink size={10} />
+                    </a>
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setUnsubState({ phase: 'idle' })}
+                        className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                    <p className="font-sans text-[13px] text-white/60 mb-4 tracking-[-0.01em]">
+                      Cancel your subscription. Any remaining balance will be
+                      refunded.
+                    </p>
+
+                    {unsubState.phase === 'error' && (
+                      <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
+                        <p className="font-sans text-[12px] text-[#EF4444]">
+                          {unsubState.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setUnsubState({ phase: 'idle' })}
+                        disabled={isUnsubSubmitting}
+                        className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
+                      >
+                        Cancel
+                      </button>
+                      <motion.button
+                        whileTap={isUnsubSubmitting ? {} : { scale: 0.97 }}
+                        transition={{ duration: 0.1 }}
+                        onClick={handleUnsubscribe}
+                        disabled={isUnsubSubmitting}
+                        className="flex-1 bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/25 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-[#EF4444]/25 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isUnsubSubmitting
+                          ? 'Confirming...'
+                          : unsubState.phase === 'error'
+                            ? 'Retry'
+                            : 'Unsubscribe'}
+                      </motion.button>
+                    </div>
+                  </div>
                 )}
-              />
-              {subError && (
-                <p className="font-sans text-[12px] text-[#EF4444] mt-1.5">
-                  {subError}
-                </p>
-              )}
-              <p className="font-sans text-[11px] text-white/25 mt-1">
-                Min {MIN_SUBSCRIBE} INIT
-              </p>
-            </div>
-
-            {subState.phase === 'error' && (
-              <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
-                <p className="font-sans text-[12px] text-[#EF4444]">
-                  {subState.message}
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSubState({ phase: 'idle' })}
-                disabled={isSubSubmitting}
-                className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <motion.button
-                whileTap={isSubSubmitting ? {} : { scale: 0.97 }}
-                transition={{ duration: 0.1 }}
-                onClick={handleSubscribe}
-                disabled={isSubSubmitting}
-                className="flex-1 bg-white/10 text-white border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-white/15 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isSubSubmitting
-                  ? 'Confirming...'
-                  : subState.phase === 'error'
-                    ? 'Retry'
-                    : 'Confirm'}
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Subscribe success */}
-      <AnimatePresence>
-        {subState.phase === 'success' && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[13px] text-[#22C55E] mb-1">
-              Subscribed
-            </p>
-            <a
-              href={txUrl(subState.txHash)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
-            >
-              {subState.txHash.slice(0, 10)}...{subState.txHash.slice(-6)}
-              <IconExternalLink size={10} />
-            </a>
-            <div className="mt-3">
-              <button
-                onClick={() => setSubState({ phase: 'idle' })}
-                className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
-              >
-                Done
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Unsubscribe confirm panel */}
-      <AnimatePresence>
-        {(unsubState.phase === 'confirm' ||
-          unsubState.phase === 'submitting' ||
-          unsubState.phase === 'error') && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-white/5 border border-white/10 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[12px] text-white/50 mb-4 tracking-[-0.01em]">
-              Cancel your subscription. Any remaining balance will be refunded.
-            </p>
-
-            {unsubState.phase === 'error' && (
-              <div className="mb-3 px-3 py-2 bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-lg">
-                <p className="font-sans text-[12px] text-[#EF4444]">
-                  {unsubState.message}
-                </p>
-              </div>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setUnsubState({ phase: 'idle' })}
-                disabled={isUnsubSubmitting}
-                className="flex-1 bg-transparent text-white/50 border border-white/10 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:border-white/20 transition-colors duration-200 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-              <motion.button
-                whileTap={isUnsubSubmitting ? {} : { scale: 0.97 }}
-                transition={{ duration: 0.1 }}
-                onClick={handleUnsubscribe}
-                disabled={isUnsubSubmitting}
-                className="flex-1 bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/25 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:bg-[#EF4444]/25 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isUnsubSubmitting
-                  ? 'Confirming...'
-                  : unsubState.phase === 'error'
-                    ? 'Retry'
-                    : 'Unsubscribe'}
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Unsubscribe success */}
-      <AnimatePresence>
-        {unsubState.phase === 'success' && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.2, ease: EASE_OUT_CUBIC }}
-            className="bg-[#22C55E]/10 border border-[#22C55E]/20 rounded-xl p-4 w-72"
-          >
-            <p className="font-sans text-[13px] text-[#22C55E] mb-1">
-              Unsubscribed
-            </p>
-            <a
-              href={txUrl(unsubState.txHash)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[11px] text-[#22C55E]/60 hover:text-[#22C55E] transition-colors duration-200"
-            >
-              {unsubState.txHash.slice(0, 10)}...{unsubState.txHash.slice(-6)}
-              <IconExternalLink size={10} />
-            </a>
-            <div className="mt-3">
-              <button
-                onClick={() => setUnsubState({ phase: 'idle' })}
-                className="w-full bg-white/5 border border-white/10 text-white/60 font-mono text-[12px] uppercase tracking-[0.06em] py-2 rounded-lg hover:text-white hover:bg-white/8 transition-colors duration-200"
-              >
-                Done
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </>
   )
 }
 

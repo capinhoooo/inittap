@@ -33,6 +33,9 @@ export const tapPredictorReadonly = new Contract(TAPPREDICTOR_ADDRESS, TapPredic
 // AgentRegistry: read-only from backend (registration happens on-chain via user tx)
 export const agentRegistry = new Contract(AGENTREGISTRY_ADDRESS, AgentRegistryABI, provider);
 
+// AgentRegistry: connected to operatorWallet for recordTrade calls
+export const agentRegistryWrite = new Contract(AGENTREGISTRY_ADDRESS, AgentRegistryABI, operatorWallet);
+
 // CopyVault: connected to operatorWallet for executor transactions
 export const copyVault = new Contract(COPYVAULT_ADDRESS, CopyVaultABI, operatorWallet);
 

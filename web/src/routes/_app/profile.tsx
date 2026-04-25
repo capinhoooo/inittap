@@ -332,7 +332,7 @@ function ProfilePage() {
         value: MsgCall.fromPartial({
           sender: initiaAddress,
           contractAddr: config.contracts.tapPredictor,
-          input: calldata.slice(2),
+          input: calldata,
           value: '0',
           accessList: [],
           authList: [],
@@ -372,7 +372,7 @@ function ProfilePage() {
         value: MsgCall.fromPartial({
           sender: initiaAddress,
           contractAddr: config.contracts.tapPredictor,
-          input: calldata.slice(2),
+          input: calldata,
           value: '0',
           accessList: [],
           authList: [],
