@@ -337,7 +337,7 @@ function CopyTradeActionsConnected({ agentId }: { agentId: number }) {
                 className="w-full max-w-md"
               >
                 {depositState.phase === 'success' ? (
-                  <div className="bg-[#1f2228] border border-white/10 rounded-xl p-5">
+                  <div className="bg-[#1f2228] rounded-xl p-5">
                     <p className="font-sans text-[13px] text-[#22C55E] mb-1">
                       Deposit confirmed
                     </p>
@@ -1168,7 +1168,7 @@ function AgentDetailPage() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="bg-white/3 border border-white/10 rounded-xl p-4"
+                className="bg-white/3 rounded-xl p-4"
               >
                 <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 font-medium mb-1">
                   {stat.label}
@@ -1191,7 +1191,7 @@ function AgentDetailPage() {
 
           {/* Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <div className="bg-white/3 border border-white/10 rounded-xl p-5">
+            <div className="bg-white/3 rounded-xl p-5">
               <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 font-medium mb-3">
                 Agent Info
               </p>
@@ -1237,7 +1237,7 @@ function AgentDetailPage() {
               </div>
             </div>
 
-            <div className="bg-white/3 border border-white/10 rounded-xl p-5">
+            <div className="bg-white/3 rounded-xl p-5">
               <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 font-medium mb-3">
                 Strategy
               </p>
@@ -1270,7 +1270,7 @@ function AgentDetailPage() {
           </div>
 
           {/* Subscription */}
-          <div className="bg-white/3 border border-white/10 rounded-xl p-5 mb-8">
+          <div className="bg-white/3 rounded-xl p-5 mb-8">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 font-medium mb-1">
@@ -1286,7 +1286,7 @@ function AgentDetailPage() {
           </div>
 
           {/* Recent trades */}
-          <div className="bg-white/3 border border-white/10 rounded-xl overflow-hidden">
+          <div className="bg-white/3 rounded-xl overflow-hidden">
             <div className="bg-white/5 px-4 py-3 flex items-center justify-between">
               <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/50 font-medium">
                 Recent Trades

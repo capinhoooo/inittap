@@ -186,6 +186,7 @@ function LandingPage() {
 
   const btcPrice = prices?.find((p) => p.id === 'BTC/USD')
   const ethPrice = prices?.find((p) => p.id === 'ETH/USD')
+  const solPrice = prices?.find((p) => p.id === 'SOL/USD')
 
   return (
     <div className="min-h-screen bg-[#1f2228]">
@@ -249,13 +250,23 @@ function LandingPage() {
                 </p>
               </div>
             )}
+            {solPrice && (
+              <div className="bg-white/3 border border-white/10 rounded-xl px-5 py-4">
+                <p className="font-sans text-[11px] uppercase tracking-[0.05em] text-white/30 font-medium mb-1">
+                  SOL / USD
+                </p>
+                <p className="font-mono text-[28px] tracking-[-0.02em] text-white tabular-nums">
+                  ${formatOraclePrice(solPrice.price, solPrice.decimals)}
+                </p>
+              </div>
+            )}
           </motion.div>
         )}
       </section>
 
       {/* Stats bar */}
-      <section className="border-y border-white/6 bg-[#191b20] py-6 px-4 md:px-6">
-        <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8">
+      <section className="border-y border-white/6 bg-[#191b20]">
+        <div className="max-w-7xl mx-auto py-6 px-4 md:px-6 grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8">
           <StatItem
             label="Total Bets"
             value={
