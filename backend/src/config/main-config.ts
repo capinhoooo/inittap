@@ -101,7 +101,8 @@ export const TAPTOKEN_DENOM: string = 'evm/E935dbf15c2418be20Ad0be81A3a2203934d8
 export const VIPSCORE_ADDRESS: string = process.env.VIPSCORE_ADDRESS || '0x02dd9E4b05Dd4a67A073EE9746192afE1FA30906';
 
 // CORS
-export const CORS_ORIGIN: string[] = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000', 'http://localhost:3200', 'http://localhost:5173'];
+const rawCorsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3200,http://localhost:5173';
+export const CORS_ORIGIN: string[] | true = rawCorsOrigin.trim() === '*' ? true : rawCorsOrigin.split(',');
 
 // Freeze immutable config arrays
 Object.freeze(ACTIVE_PAIRS);
