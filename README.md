@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="landing-v3.png" alt="INITTAP Landing" width="100%" />
+<img src="web/public/assets/inittap-logo.svg" alt="INITTAP" width="120" />
 
 # INITTAP
 
@@ -317,26 +317,6 @@ inittap/
     ├── src/lib/            # API client + contract ABIs
     └── src/components/     # Shared UI components
 ```
-
----
-
-## Screenshots
-
-<div align="center">
-
-| Trade | Leaderboard |
-|:-----:|:-----------:|
-| <img src="trade.png" width="400" /> | <img src="leaderboard.png" width="400" /> |
-
-| Profile | Agents |
-|:-------:|:------:|
-| <img src="profile.png" width="400" /> | <img src="agents.png" width="400" /> |
-
-| Explorer |
-|:--------:|
-| <img src="explorer.png" width="400" /> |
-
-</div>
 
 ---
 
