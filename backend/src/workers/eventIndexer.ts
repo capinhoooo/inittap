@@ -798,13 +798,17 @@ const indexEvents = async (): Promise<void> => {
     }
 
     // Get or create cursor
+    const CONTRACT_DEPLOY_BLOCK = BigInt(17173000);
     const cursor = await prismaQuery.indexerCursor.upsert({
       where: { id: 'main' },
-      create: { id: 'main', lastBlockNumber: BigInt(17173000) },
+      create: { id: 'main', lastBlockNumber: CONTRACT_DEPLOY_BLOCK },
       update: {},
     });
 
-    let lastBlockNumber = cursor.lastBlockNumber;
+    // If cursor is behind contract deployment, fast-forward
+    let lastBlockNumber = cursor.lastBlockNumber < CONTRACT_DEPLOY_BLOCK
+      ? CONTRACT_DEPLOY_BLOCK
+      : cursor.lastBlockNumber;
     const currentBlock = BigInt(await provider.getBlockNumber());
 
     if (lastBlockNumber >= currentBlock) {
@@ -873,7 +877,7 @@ const indexEvents = async (): Promise<void> => {
               where: { id: 'main' },
               data: { lastBlockNumber: toBlock },
             });
-          });
+          }, { timeout: 30000 });
         } else {
           // No parseable events, just advance the cursor
           await prismaQuery.indexerCursor.update({
