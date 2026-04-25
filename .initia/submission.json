@@ -8,5 +8,5 @@
   "native_feature": "auto-signing",
   "core_logic_path": "contract/src/TapPredictor.sol",
   "native_feature_frontend_path": "web/src/routes/_app/trade.tsx",
-  "demo_video_url": ""
+  "demo_video_url": "https://youtu.be/tN2H4Qi6_rY"
 }
